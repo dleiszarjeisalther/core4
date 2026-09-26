@@ -92,7 +92,6 @@ page_header('Reports, Analysis & Dashboard','dashboard'); show_flash(); ?>
 (function(){
   const filter=document.querySelector('.dashboard-date-filter input[name="date"]');
   if(!filter || !document.querySelector('.dashboard-date-filter')) return;
-  window.setInterval(function(){ if(document.visibilityState==='visible' && !document.querySelector('input:focus,textarea:focus,select:focus')) window.location.reload(); },30000);
 })();
 </script>
 

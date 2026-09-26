@@ -9,31 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.getElementById('modalRoot')?.replaceChildren();sidebar?.classList.remove('open');backdrop?.classList.remove('show');}});
   document.querySelectorAll('input[type="number"]').forEach(i=>i.addEventListener('wheel',e=>e.preventDefault(),{passive:false}));
   document.querySelectorAll('form').forEach(form=>form.addEventListener('submit',()=>{const btn=form.querySelector('button[type="submit"],button:not([type])');if(btn){btn.disabled=true;btn.dataset.originalText=btn.innerHTML;btn.innerHTML='<span class="material-symbols-outlined">hourglass_top</span> Processing...';setTimeout(()=>{btn.disabled=false;btn.innerHTML=btn.dataset.originalText||'Submit';},4000);}}));
-  initAutoRefresh();
 });
-function initAutoRefresh(){
-  if(window.CT4_AUTO_REFRESH_TIMER) clearInterval(window.CT4_AUTO_REFRESH_TIMER);
-  const refreshMs=30000;
-  let remaining=30;
-  const update=()=>{ const el=document.getElementById('autoRefreshStatus'); if(el) el.textContent=`Auto refresh in ${remaining}s`; };
-  if(!document.getElementById('autoRefreshStatus')){
-    const status=document.createElement('div'); status.id='autoRefreshStatus'; status.className='auto-refresh-status'; status.setAttribute('title','The page refreshes automatically every 30 seconds.'); status.textContent='Auto refresh in 30s';
-    document.body.appendChild(status);
-  }
-  update();
-  const tick=()=>{
-    remaining--;
-    update();
-    if(remaining<=0){
-      const active=document.activeElement;
-      const typing=active && (active.matches('input,textarea,select') || document.querySelector('.gw-modal'));
-      if(typing){ remaining=5; return; }
-      window.location.reload();
-      return;
-    }
-  };
-  window.CT4_AUTO_REFRESH_TIMER=setInterval(tick,1000);
-}
 function showModal(title,body){const root=document.getElementById('modalRoot');if(!root)return;root.innerHTML=`<div class="gw-modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="gw-modal"><div class="gw-modal-head"><strong>${escapeHtml(title)}</strong><button class="gw-modal-close" onclick="closeModal()"><span class="material-symbols-outlined">close</span></button></div><div class="gw-modal-body"><p style="font-size:12px;line-height:1.7;color:#64748b">${escapeHtml(body)}</p><div style="display:flex;justify-content:flex-end;margin-top:20px"><button class="gw-btn primary" onclick="closeModal()">Continue</button></div></div></div></div>`;}
 function closeModal(){document.getElementById('modalRoot')?.replaceChildren();}
 function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
@@ -295,7 +271,7 @@ function showLogoutModal(){
   }
   function init(){
     if(!window.CURRENT_USER || !window.CURRENT_USER.name) return;
-    ['keydown','mousedown','touchstart','scroll','click','wheel'].forEach(evt=>window.addEventListener(evt,markActivity,{passive:true}));
+    ['keydown','mousedown','touchstart','scroll','click','wheel','input','change','focus'].forEach(evt=>window.addEventListener(evt,markActivity,{passive:true}));
     window.addEventListener('mousemove',()=>{
       const now=Date.now(); if(now-lastMove>300){lastMove=now;markActivity();}
     },{passive:true});
