@@ -11,6 +11,7 @@
 
 # Git metadata
 .git
+.github
 .gitignore
 .gitattributes
 
@@ -25,6 +26,12 @@ Thumbs.db
 # Node / npm (not needed at runtime)
 node_modules/
 npm-debug.log*
+
+# Runtime-generated data and local logs
+storage/logs/*
+storage/exports/*
+storage/reports/*
+*.log
 
 # Local Herd / Valet config
 *.herd

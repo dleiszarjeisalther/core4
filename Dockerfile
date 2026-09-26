@@ -1,36 +1,47 @@
-# =============================================================
-# GREAT SOLOMON MANPOWER SERVICES INC. — CORE TRANSACTION 4
-# Dockerfile — Production image for HostForge deployment.
-#
-# Domain : core4.test (custom domain configured in HostForge)
-# Stack  : PHP 8.3 + Apache (mod_rewrite enabled)
-# Auth   : Authoritative Dockerfile route — wizard commands blank.
-# =============================================================
+# syntax=docker/dockerfile:1
 
-FROM php:8.3-apache
+# Reusable PHP/Apache layer. Keep this before the application COPY so normal
+# source changes do not rebuild native PHP extensions on every deployment.
+FROM php:8.2-apache AS php-base
 
-# ---------------------------------------------------------------------------
-# System packages & PHP extensions
-# ---------------------------------------------------------------------------
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libpng-dev \
-        libjpeg62-turbo-dev \
-        libfreetype6-dev \
-        libzip-dev \
-        unzip \
+# Install only the native extensions used by Core Transaction 4.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
         curl \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+        libcurl4-openssl-dev \
+        libonig-dev \
+        libzip-dev \
     && docker-php-ext-install -j"$(nproc)" \
-        pdo \
-        pdo_mysql \
-        gd \
-        zip \
+        curl \
+        mbstring \
         opcache \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+        pdo_mysql \
+        zip \
+    && a2enmod headers rewrite \
+    && rm -rf /var/lib/apt/lists/*
 
-# ---------------------------------------------------------------------------
-# PHP runtime configuration — production hardened
-# ---------------------------------------------------------------------------
+ENV PORT=8080
+
+# Let the hosting platform choose the runtime port while retaining .htaccess
+# routing and the existing protection for server-only application paths.
+RUN sed -ri 's!Listen 80!Listen ${PORT}!' /etc/apache2/ports.conf \
+    && { \
+        echo '<VirtualHost *:${PORT}>'; \
+        echo '    ServerName core4.test'; \
+        echo '    DocumentRoot /var/www/html'; \
+        echo '    <Directory /var/www/html>'; \
+        echo '        AllowOverride All'; \
+        echo '        Require all granted'; \
+        echo '        Options -Indexes +FollowSymLinks'; \
+        echo '    </Directory>'; \
+        echo '    <LocationMatch "^/(\.env|\.git|database|includes)">'; \
+        echo '        Require all denied'; \
+        echo '    </LocationMatch>'; \
+        echo '    ErrorLog /dev/stderr'; \
+        echo '    CustomLog /dev/stdout combined'; \
+        echo '</VirtualHost>'; \
+    } > /etc/apache2/sites-available/000-default.conf
+
 RUN { \
         echo 'opcache.enable=1'; \
         echo 'opcache.revalidate_freq=0'; \
@@ -38,7 +49,6 @@ RUN { \
         echo 'opcache.max_accelerated_files=10000'; \
         echo 'opcache.memory_consumption=128'; \
         echo 'opcache.interned_strings_buffer=16'; \
-        echo 'opcache.fast_shutdown=1'; \
     } > /usr/local/etc/php/conf.d/opcache-recommended.ini \
     && { \
         echo 'expose_php=Off'; \
@@ -54,52 +64,19 @@ RUN { \
         echo 'session.use_strict_mode=1'; \
     } > /usr/local/etc/php/conf.d/app-production.ini
 
-# ---------------------------------------------------------------------------
-# Apache: enable mod_rewrite and configure virtual host
-# HostForge edge proxy passes traffic on $PORT (default 80 inside container).
-# ---------------------------------------------------------------------------
-RUN a2enmod rewrite headers
+FROM php-base AS runtime
 
-# Virtual host: serve from /var/www/html (project root), .htaccess controls routing.
-RUN { \
-        echo '<VirtualHost *:80>'; \
-        echo '    ServerName core4.test'; \
-        echo '    DocumentRoot /var/www/html'; \
-        echo '    <Directory /var/www/html>'; \
-        echo '        AllowOverride All'; \
-        echo '        Require all granted'; \
-        echo '        Options -Indexes +FollowSymLinks'; \
-        echo '    </Directory>'; \
-        echo '    # Security: block direct access to sensitive paths'; \
-        echo '    <LocationMatch "^/(\.env|\.git|database|includes)">'; \
-        echo '        Require all denied'; \
-        echo '    </LocationMatch>'; \
-        echo '    ErrorLog /dev/stderr'; \
-        echo '    CustomLog /dev/stdout combined'; \
-        echo '</VirtualHost>'; \
-    } > /etc/apache2/sites-available/000-default.conf
-
-# ---------------------------------------------------------------------------
-# Copy application source
-# ---------------------------------------------------------------------------
 WORKDIR /var/www/html
 
-COPY . .
+COPY . ./
 
-# Ensure storage directories exist and are writable (ephemeral container safety)
 RUN mkdir -p storage/logs storage/exports storage/reports \
     && chown -R www-data:www-data storage \
-    && chmod -R 755 storage
+    && chmod -R ug+rwX storage
 
-# Remove local .env so the container uses real environment variables only
-# (secrets come from HostForge environment variable injection)
-RUN rm -f .env
+EXPOSE 8080
 
-# ---------------------------------------------------------------------------
-# Expose & start
-# HostForge routes external HTTPS traffic → container port 80.
-# The $PORT env var is honoured for platform flexibility.
-# ---------------------------------------------------------------------------
-EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl --fail --silent "http://127.0.0.1:${PORT}/" > /dev/null || exit 1
 
 CMD ["apache2-foreground"]
