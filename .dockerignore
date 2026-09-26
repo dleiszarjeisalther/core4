@@ -1,0 +1,30 @@
+# =============================================================
+# .dockerignore — Exclude dev/local artefacts from Docker build
+# =============================================================
+
+# Local environment secrets — NEVER bake into image
+.env
+.env.*.local
+
+# Backup files
+*.bak
+
+# Git metadata
+.git
+.gitignore
+.gitattributes
+
+# Editor / OS artefacts
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Node / npm (not needed at runtime)
+node_modules/
+npm-debug.log*
+
+# Local Herd / Valet config
+*.herd

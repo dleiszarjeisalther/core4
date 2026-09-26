@@ -1,0 +1,42 @@
+# =============================================================
+# GREAT SOLOMON MANPOWER SERVICES INC. — CORE TRANSACTION 4
+# .htaccess — Apache rewrite, security hardening, and routing.
+# Compatible with local XAMPP/Herd and HostForge production.
+# =============================================================
+
+DirectoryIndex index.php
+
+# Allow access in all environments (Apache 2.4)
+<IfModule mod_authz_core.c>
+    Require all granted
+</IfModule>
+
+# ---------------------------------------------------------------------------
+# Security: block direct access to sensitive files and folders
+# ---------------------------------------------------------------------------
+<FilesMatch "^(\.env|\.git|\.gitignore|\.dockerignore|Dockerfile)(\..*)?$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+</FilesMatch>
+
+# Block direct access to PHP source folders
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Block direct browser access to back-end source directories
+    RewriteRule ^(includes|database|storage)(/|$) - [F,L]
+
+    # Remove X-Powered-By header (via Headers module)
+    <IfModule mod_headers.c>
+        Header always unset X-Powered-By
+        Header always set X-Content-Type-Options "nosniff"
+        Header always set X-Frame-Options "SAMEORIGIN"
+        Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    </IfModule>
+
+    # Route all non-file, non-directory requests to index.php
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [L]
+</IfModule>
