@@ -63,6 +63,15 @@ gsms_load_env_file();
     if (!getenv('GSMS_DB_PASS') && getenv('DB_PASSWORD')) putenv('GSMS_DB_PASS='.getenv('DB_PASSWORD'));
 })();
 
+// --- Application Environment & Debugging ---
+define('APP_ENV',   getenv('APP_ENV') ?: (getenv('ENVIRONMENT') ?: 'production'));
+define('APP_DEBUG', filter_var(getenv('APP_DEBUG') ?: (APP_ENV !== 'production' ? 'true' : 'false'), FILTER_VALIDATE_BOOLEAN));
+
+if (APP_ENV === 'production' && !APP_DEBUG) {
+    ini_set('display_errors', '0');
+    ini_set('display_startup_errors', '0');
+}
+
 // --- Resolved DB constants ---
 define('DB_HOST', getenv('GSMS_DB_HOST') ?: '127.0.0.1');
 define('DB_PORT', (int)(getenv('GSMS_DB_PORT') ?: 3306));

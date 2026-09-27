@@ -20,22 +20,20 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
 
             if (!$row) {
                 $error='Your verification code is no longer available. Please sign in again.';
-                unset($_SESSION['pending_otp_user'],$_SESSION['pending_otp_created'],$_SESSION['temp_otp_code']);
+                unset($_SESSION['pending_otp_user'],$_SESSION['pending_otp_created']);
                 $pending=null;
             } elseif (strtotime($row['expires_at']) < time()) {
                 $error='Your verification code has expired. Please sign in again.';
                 db()->prepare('DELETE FROM otp_requests WHERE id=?')->execute([(int)$row['id']]);
-                unset($_SESSION['temp_otp_code']);
             } elseif ((int)$row['attempts'] >= OTP_MAX_ATTEMPTS) {
                 $error='Too many incorrect attempts. Please sign in again.';
-                unset($_SESSION['temp_otp_code']);
             } elseif (!preg_match('/^\d{6}$/',$code) || !password_verify($code,$row['otp_hash'])) {
                 db()->prepare('UPDATE otp_requests SET attempts=attempts+1 WHERE id=?')->execute([(int)$row['id']]);
                 $error='Incorrect verification code.';
             } else {
                 login_user($pending);
                 db()->prepare('DELETE FROM otp_requests WHERE user_id=?')->execute([(int)$pending['id']]);
-                unset($_SESSION['pending_otp_user'],$_SESSION['pending_otp_created'],$_SESSION['temp_otp_code']);
+                unset($_SESSION['pending_otp_user'],$_SESSION['pending_otp_created']);
 
                 $history=db()->prepare('INSERT INTO login_history(user_id,email,status,ip_address,user_agent) VALUES(?,?,?,?,?)');
                 $history->execute([
@@ -53,11 +51,13 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             db()->prepare('DELETE FROM otp_requests WHERE user_id=?')->execute([(int)$pending['id']]);
             db()->prepare('INSERT INTO otp_requests(user_id,otp_hash,expires_at,attempts) VALUES(?,?,?,0)')
                 ->execute([(int)$pending['id'],$hash,$expires]);
-            $_SESSION['temp_otp_code']=$otp;
             try {
                 send_otp_email($pending['email'],$pending['name'],$otp);
-            } catch(Throwable $e) {}
-            $success='A new 6-digit verification code has been generated and sent.';
+                $success='A new 6-digit verification code has been sent to your email.';
+            } catch(Throwable $mailError) {
+                db()->prepare('DELETE FROM otp_requests WHERE user_id=?')->execute([(int)$pending['id']]);
+                $error='Unable to send verification code. Check the Gmail SMTP/App Password settings and try again.';
+            }
         } elseif ($action==='login') {
             $email=trim($_POST['email']??'');
             $password=$_POST['password']??'';
@@ -76,27 +76,26 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
                 db()->prepare('INSERT INTO otp_requests(user_id,otp_hash,expires_at,attempts) VALUES(?,?,?,0)')
                     ->execute([(int)$u['id'],$otpHash,$expires]);
 
-                $_SESSION['pending_otp_user']=[
-                    'id'=>(int)$u['id'],'name'=>$u['name'],
-                    'email'=>$u['email'],'role'=>$u['role']
-                ];
-                $_SESSION['pending_otp_created']=time();
-                $_SESSION['temp_otp_code']=$otp;
-                $pending=$_SESSION['pending_otp_user'];
-                $success='Verification code sent. Enter the 6-digit OTP below to continue to the dashboard.';
-
                 try {
                     send_otp_email($u['email'],$u['name'],$otp);
-                } catch(Throwable $mailError) {
-                    // Email failed or not configured, keep OTP available in session
-                }
+                    $_SESSION['pending_otp_user']=[
+                        'id'=>(int)$u['id'],'name'=>$u['name'],
+                        'email'=>$u['email'],'role'=>$u['role']
+                    ];
+                    $_SESSION['pending_otp_created']=time();
+                    $pending=$_SESSION['pending_otp_user'];
+                    $success='Verification code sent. Enter the 6-digit OTP below to continue to the dashboard.';
 
-                $history=db()->prepare('INSERT INTO login_history(user_id,email,status,ip_address,user_agent) VALUES(?,?,?,?,?)');
-                $history->execute([
-                    (int)$u['id'],$email,'OTP Pending',
-                    $_SERVER['REMOTE_ADDR']??'Unknown',
-                    substr($_SERVER['HTTP_USER_AGENT']??'',0,500)
-                ]);
+                    $history=db()->prepare('INSERT INTO login_history(user_id,email,status,ip_address,user_agent) VALUES(?,?,?,?,?)');
+                    $history->execute([
+                        (int)$u['id'],$email,'OTP Pending',
+                        $_SERVER['REMOTE_ADDR']??'Unknown',
+                        substr($_SERVER['HTTP_USER_AGENT']??'',0,500)
+                    ]);
+                } catch(Throwable $mailError) {
+                    db()->prepare('DELETE FROM otp_requests WHERE user_id=?')->execute([(int)$u['id']]);
+                    $error='We could not send the verification code. Check the Gmail SMTP/App Password settings and try again.';
+                }
             } else {
                 $error='Invalid email or password.';
                 $history=db()->prepare('INSERT INTO login_history(user_id,email,status,ip_address,user_agent) VALUES(?,?,?,?,?)');
@@ -110,16 +109,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
     } catch(Throwable $e) {
         $error='Unable to process the request. Check the database and Gmail settings.';
     }
-}
-
-if ($pending && empty($_SESSION['temp_otp_code'])) {
-    $otp=(string)random_int(100000,999999);
-    $otpHash=password_hash($otp,PASSWORD_DEFAULT);
-    $expires=date('Y-m-d H:i:s',time()+(OTP_EXPIRY_MINUTES*60));
-    db()->prepare('DELETE FROM otp_requests WHERE user_id=?')->execute([(int)$pending['id']]);
-    db()->prepare('INSERT INTO otp_requests(user_id,otp_hash,expires_at,attempts) VALUES(?,?,?,0)')
-        ->execute([(int)$pending['id'],$otpHash,$expires]);
-    $_SESSION['temp_otp_code']=$otp;
 }
 ?>
 <!doctype html>
@@ -140,28 +129,11 @@ if ($pending && empty($_SESSION['temp_otp_code'])) {
     </div>
 
     <?php if($pending): ?>
-      <?php $tempOtp = $_SESSION['temp_otp_code'] ?? ''; ?>
       <div class="auth-heading">
         <span class="material-symbols-outlined">shield_lock</span>
         <h1>Enter OTP</h1>
         <p>Login successful. Enter the <strong>6-digit OTP</strong> sent to <strong><?=e($pending['email'])?></strong> to continue to the dashboard.</p>
       </div>
-
-      <?php if(!empty($tempOtp)): ?>
-        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:14px;padding:16px;margin-bottom:18px;text-align:center;box-shadow:0 2px 8px rgba(245,158,11,0.08);">
-          <div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.06em;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:6px;">
-            <span class="material-symbols-outlined" style="font-size:18px;color:#d97706;">key</span> Temporary OTP (Development Mode)
-          </div>
-          <div style="font-size:32px;font-weight:900;letter-spacing:10px;color:#7c2d12;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;margin:6px 0;user-select:all;padding-left:10px;">
-            <?=e($tempOtp)?>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px;">
-            <button type="button" onclick="const input=document.getElementById('otp');if(input){input.value='<?=e($tempOtp)?>';input.focus();}" style="background:#fde68a;border:1px solid #f59e0b;padding:5px 14px;border-radius:8px;font-size:12px;font-weight:700;color:#78350f;cursor:pointer;display:inline-flex;align-items:center;gap:4px;">
-              <span class="material-symbols-outlined" style="font-size:16px;">content_paste_go</span> Auto-fill OTP
-            </button>
-          </div>
-        </div>
-      <?php endif; ?>
       <?php if($error):?><div class="notice error auth-error"><?=e($error)?></div><?php endif;?>
       <?php if($success):?><div class="notice success auth-error"><?=e($success)?></div><?php endif;?>
 

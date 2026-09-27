@@ -1,5 +1,6 @@
-CREATE DATABASE IF NOT EXISTS great_solomon_ct4 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE great_solomon_ct4;
+-- Optional for local setup only (uncomment if creating a local database from scratch):
+-- CREATE DATABASE IF NOT EXISTS great_solomon_ct4 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- USE great_solomon_ct4;
 
 CREATE TABLE IF NOT EXISTS users (
  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
