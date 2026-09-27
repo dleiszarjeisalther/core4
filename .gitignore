@@ -22,6 +22,7 @@ Thumbs.db
 storage/logs/
 storage/exports/
 storage/reports/
+tmp/
 
 # Keep the storage root tracked
 !storage/.gitkeep

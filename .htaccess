@@ -24,8 +24,12 @@ DirectoryIndex index.php
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
-    # Block direct browser access to back-end source directories
-    RewriteRule ^(includes|database|storage)(/|$) - [F,L]
+    # Block direct browser access to sensitive database and storage directories
+    RewriteRule ^(database|storage)(/|$) - [F,L]
+
+    # Block direct browser access to private include files, while allowing public endpoints
+    RewriteCond %{REQUEST_URI} !(feedback|data_storage|archive|mark_notifications_read)\.php [NC]
+    RewriteRule ^includes(/|$) - [F,L]
 
     # Remove X-Powered-By header (via Headers module)
     <IfModule mod_headers.c>
