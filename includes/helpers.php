@@ -5,12 +5,12 @@ function e($v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'
 function flash(string $type, string $message): void { $_SESSION['flash']=['type'=>$type,'message'=>$message]; }
 function show_flash(): void { if (!empty($_SESSION['flash'])) { $f=$_SESSION['flash']; unset($_SESSION['flash']); echo '<div class="notice '.e($f['type']).'">'.e($f['message']).'</div>'; } }
 function audit(string $module,string $action,string $details=''): void { try { $u=current_user(); $stmt=db()->prepare('INSERT INTO audit_logs(user_id,module,action,details) VALUES(?,?,?,?)'); $stmt->execute([$u['id']??null,$module,$action,$details]); } catch(Throwable $e) {} }
-function base_url(): string { $path=str_replace('\\','/',dirname($_SERVER['SCRIPT_NAME']??'/')); if(str_contains($path,'/modules/')) return preg_replace('#/modules/.*$#','',$path) ?: ''; if(str_contains($path,'/auth/')) return preg_replace('#/auth/.*$#','',$path) ?: ''; return $path==='/'?'':rtrim($path,'/'); }
+function base_url(): string { $path=str_replace('\\','/',dirname($_SERVER['SCRIPT_NAME']??'/')); if(str_contains($path,'/modules/')) return preg_replace('#/modules/.*$#','',$path) ?: ''; if(str_contains($path,'/auth/')) return preg_replace('#/auth/.*$#','',$path) ?: ''; if(str_contains($path,'/includes')) return preg_replace('#/includes.*$#','',$path) ?: ''; if(str_contains($path,'/services')) return preg_replace('#/services.*$#','',$path) ?: ''; return ($path==='/' || $path==='.') ? '' : rtrim($path,'/'); }
 function url(string $path): string { return rtrim(base_url(),'/').'/'.ltrim($path,'/'); }
 function redirect(string $path): never { header('Location: '.url($path)); exit; }
 function admin_feedback_notifications(): array {
     try {
-        $stmt=db()->query("SELECT id, sender_name, sender_role, sender_user_id, title, message, is_read, created_at FROM admin_notifications WHERE type='feedback' ORDER BY created_at DESC LIMIT 50");
+        $stmt=db()->query("SELECT id, type, sender_name, sender_role, sender_user_id, title, message, is_read, created_at FROM admin_notifications WHERE type IN ('feedback','data_transfer') ORDER BY created_at DESC LIMIT 50");
         return $stmt->fetchAll();
     } catch(Throwable $e) { return []; }
 }
@@ -19,7 +19,7 @@ function staff_transfer_notifications(): array {
         $u=current_user();
         if (!$u || ($u['role'] ?? '') !== 'Staff') return [];
         $stmt=$pdo=db();
-        $q=$stmt->prepare("SELECT id, sender_name, sender_role, title, message, is_read, created_at FROM admin_notifications WHERE type='data_transfer' AND (user_id=? OR user_id IS NULL) ORDER BY created_at DESC LIMIT 50");
+        $q=$stmt->prepare("SELECT id, type, sender_name, sender_role, sender_user_id, title, message, is_read, created_at FROM admin_notifications WHERE (user_id=? OR user_id IS NULL) AND type IN ('data_transfer','feedback_reply','file_release') ORDER BY created_at DESC LIMIT 50");
         $q->execute([(int)$u['id']]);
         return $q->fetchAll();
     } catch(Throwable $e) { return []; }

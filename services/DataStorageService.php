@@ -20,18 +20,23 @@ final class DataStorageService {
         return $this->pdo->query("SELECT id,file_name,file_type,file_data FROM data_storage ORDER BY created_at ASC,id ASC")->fetchAll();
     }
 
-    public function delete(int $id): void { $this->pdo->prepare('DELETE FROM data_storage WHERE id=?')->execute([$id]); }
+    public function delete(int $id): void {
+        $this->pdo->prepare('DELETE FROM data_storage WHERE id=?')->execute([$id]);
+    }
 
     public function save(string $name,string $type,string $source,int $userId,string $data): void {
         $name=trim($name);
         if($name==='' || strlen($name)>255) throw new RuntimeException('Please provide a valid file name.');
-        if($data==='') throw new RuntimeException('The selected file is empty.');
         $stmt=$this->pdo->prepare("INSERT INTO data_storage(file_name,file_type,file_size,source_branch,uploaded_by,file_data) VALUES(?,?,?,?,?,?)");
         $stmt->bindValue(1,$name);
         $stmt->bindValue(2,$type!==''?$type:'application/octet-stream');
         $stmt->bindValue(3,strlen($data),PDO::PARAM_INT);
         $stmt->bindValue(4,$source!==''?$source:null);
-        $stmt->bindValue(5,$userId,PDO::PARAM_INT);
+        if ($userId > 0) {
+            $stmt->bindValue(5,$userId,PDO::PARAM_INT);
+        } else {
+            $stmt->bindValue(5,null,PDO::PARAM_NULL);
+        }
         $stmt->bindValue(6,$data,PDO::PARAM_LOB);
         $stmt->execute();
     }

@@ -29,13 +29,13 @@ function showNotificationModal(){
  const isStaff=window.CURRENT_USER?.role==='Staff';
  const notes=isStaff?(Array.isArray(window.STAFF_NOTIFICATIONS)?window.STAFF_NOTIFICATIONS:[]):(Array.isArray(window.ADMIN_NOTIFICATIONS)?window.ADMIN_NOTIFICATIONS:[]);
  const title=isStaff?'Notifications':'Admin Notifications';
- const subtitle=isStaff?'New data/files transferred to the system.':'Feedback received from staff members.';
- const empty=isStaff?'No new data/file transfers yet':'No staff feedback yet';
+ const subtitle=isStaff?'Transferred data/files and replies to your feedback.':'Feedback received from staff members.';
+ const empty=isStaff?'No notifications yet':'No staff feedback yet';
  const body=notes.length ? notes.map(n=>{
    const unread=Number(n.is_read)===0;
    const date=new Date(String(n.created_at).replace(' ','T'));
    const when=isNaN(date.getTime())?escapeHtml(n.created_at||''):date.toLocaleString();
-   const reply=(window.CURRENT_USER?.role==='Administrator' && n.type==='feedback')
+   const reply=(window.CURRENT_USER?.role==='Administrator' && (n.type==='feedback' || !n.type))
      ? `<div class="notification-actions"><button type="button" class="gw-btn secondary" onclick="showFeedbackReply(${Number(n.id)},${JSON.stringify(String(n.sender_name||'Staff'))},${JSON.stringify(String(n.sender_role||'Staff'))},${JSON.stringify(String(n.message||''))},${Number(n.sender_user_id||0)})"><span class="material-symbols-outlined">reply</span>Reply</button></div>` : '';
    return `<div class="notification-card ${unread?'unread':''}">
      <div class="notification-card-head"><div><strong>${escapeHtml(n.title||'Notification')}</strong><span>${escapeHtml(n.sender_name||'System')} · ${escapeHtml(n.sender_role||'System')}</span></div><small>${escapeHtml(when)}</small></div>
@@ -57,7 +57,7 @@ function showFeedbackSentModal(){
  const root=document.getElementById('modalRoot'); if(!root)return;
  root.innerHTML=`<div class="gw-modal-backdrop"><div class="gw-modal feedback-sent-modal">
    <div class="feedback-sent-icon"><span class="material-symbols-outlined">mark_email_read</span></div>
-   <div class="gw-modal-body feedback-sent-body"><strong>Feedback Sent</strong><p>Your feedback was sent to the administrator's notifications.</p><button class="gw-btn primary" onclick="closeModal()">Done</button></div>
+   <div class="gw-modal-body feedback-sent-body"><strong>Success</strong><p>Your message has been sent successfully.</p><button class="gw-btn primary" onclick="closeModal()">Done</button></div>
  </div></div>`;
 }
 
@@ -74,6 +74,7 @@ function showFeedbackModal(replyContext=null){
  <div class="gw-modal-body">
  ${replying?`<div class="feedback-reply-context"><strong>Original feedback from ${escapeHtml(recipientName)} (${escapeHtml(recipientRole)})</strong><p>${escapeHtml(original)}</p></div>`:`<div class="feedback-intro"><span class="material-symbols-outlined">rate_review</span><div><strong>Your account details are automatic</strong><p>Your name and role are taken from the account currently signed in.</p></div></div>`}
  <form method="post" action="${window.APP_BASE||''}/includes/feedback.php">
+ <input type="hidden" name="return_to" value="${escapeHtml(window.location.pathname + window.location.search)}">
  ${replying?`<input type="hidden" name="action" value="reply"><input type="hidden" name="notification_id" value="${Number(replyContext.replyTo)}">`:''}
  <div class="feedback-account-grid"><div class="feedback-readonly-field"><label>${replying?'From':'Name'}</label><div class="feedback-readonly-value"><span class="material-symbols-outlined">person</span>${escapeHtml(user.name)}</div></div><div class="feedback-readonly-field"><label>${replying?'To':'Role'}</label><div class="feedback-readonly-value"><span class="material-symbols-outlined">${replying?'person':'badge'}</span>${escapeHtml(replying?recipientName:user.role)}</div></div></div>
  <div class="feedback-message-field"><label for="feedbackText">${replying?'Reply':'Your Feedback'}</label><textarea id="feedbackText" name="feedback" rows="7" required maxlength="3000" placeholder="${replying?'Write your reply...':'Tell us what worked well, what should be improved, or if you found a problem...'}"></textarea><div class="feedback-helper">Please avoid including passwords or other sensitive information.</div></div>
@@ -170,13 +171,54 @@ function showDataStorageModal(){
     <div class="gw-modal data-storage-modal">
       <div class="gw-modal-head"><div><strong>Data Storage</strong><small>Data/files received from other branches.</small></div><button class="gw-modal-close" onclick="closeModal()" aria-label="Close">×</button></div>
       <div class="gw-modal-body">
-        <div class="data-storage-toolbar"><div><strong>DATA / FILES</strong><span>Stored data/files received from other branches.</span></div>
-          <button class="gw-btn primary" type="button" onclick="showDownloadAllConfirm()"><span class="material-symbols-outlined">download</span>DOWNLOAD ALL</button>
+        <div class="data-storage-toolbar">
+          <div><strong>DATA / FILES</strong><span>Stored data/files received from other branches.</span></div>
+          <form id="dataStorageUploadForm" class="data-storage-upload" onsubmit="handleDataStorageUpload(event)">
+            <input type="file" name="data_file" id="dataStorageFileInput" required>
+            <input type="text" name="source_branch" placeholder="Branch / Source (optional)">
+            <button class="gw-btn primary" type="submit" id="dataStorageUploadBtn"><span class="material-symbols-outlined">upload</span>UPLOAD</button>
+            <button class="gw-btn secondary" type="button" onclick="showDownloadAllConfirm()"><span class="material-symbols-outlined">download</span>DOWNLOAD ALL</button>
+          </form>
         </div>
         <div id="dataStorageList" class="data-storage-list"><div class="data-storage-loading"><span class="material-symbols-outlined">progress_activity</span>Loading stored files...</div></div>
       </div>
     </div>
   </div>`;
+  loadDataStorageList();
+}
+function handleDataStorageUpload(e){
+  e.preventDefault();
+  const form=e.target;
+  const fileInput=form.querySelector('input[type="file"]');
+  if(!fileInput || !fileInput.files.length) return;
+  const btn=document.getElementById('dataStorageUploadBtn');
+  const originalHtml=btn?btn.innerHTML:'';
+  if(btn){ btn.disabled=true; btn.innerHTML='<span class="material-symbols-outlined">hourglass_top</span> Uploading...'; }
+  const fd=new FormData(form);
+  fetch(`${window.APP_BASE||''}/includes/data_storage.php?action=upload`,{
+    method:'POST',
+    body:fd,
+    credentials:'same-origin',
+    headers:{'X-Requested-With':'XMLHttpRequest'}
+  })
+    .then(r=>r.json().catch(()=>({ok:false,error:'Server returned invalid response.'})))
+    .then(data=>{
+      if(btn){ btn.disabled=false; btn.innerHTML=originalHtml; }
+      if(data.ok){
+        window.DATA_STORAGE_HAS_FILES=null;
+        form.reset();
+        loadDataStorageList();
+        showModal('Success','File uploaded and stored successfully.');
+      } else {
+        showModal('Upload Failed',data.error||'Unable to upload file.');
+      }
+    })
+    .catch(err=>{
+      if(btn){ btn.disabled=false; btn.innerHTML=originalHtml; }
+      showModal('Upload Error',err.message||'Failed to communicate with server.');
+    });
+}
+function loadDataStorageList(){
   fetch(`${window.APP_BASE||''}/includes/data_storage.php?action=list`,{credentials:'same-origin'})
     .then(r=>r.json()).then(data=>{
       const box=document.getElementById('dataStorageList'); if(!box)return;
@@ -194,10 +236,21 @@ function showDataStorageModal(){
 function showStoredFile(id,name,type){
   const root=document.getElementById('modalRoot'); if(!root)return;
   const src=`${window.APP_BASE||''}/includes/data_storage.php?action=view&id=${encodeURIComponent(id)}`;
+  const isImg = String(type||'').startsWith('image/') || /\.(jpe?g|png|gif|webp|svg)$/i.test(name);
+  const isPdf = (type === 'application/pdf') || /\.pdf$/i.test(name);
+  const isTxt = String(type||'').startsWith('text/') || /\.(txt|csv|log|json|xml|html)$/i.test(name);
+  let previewContent = '';
+  if (isImg) {
+    previewContent = `<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#f1f5f9;padding:12px"><img src="${src}" alt="${escapeHtml(name)}" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px"></div>`;
+  } else if (isPdf || isTxt) {
+    previewContent = `<iframe src="${src}" title="${escapeHtml(name)}" style="width:100%;height:100%;border:0"></iframe>`;
+  } else {
+    previewContent = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:#64748b;text-align:center;padding:24px"><span class="material-symbols-outlined" style="font-size:54px;color:#4f46e5">description</span><strong>${escapeHtml(name)}</strong><p style="margin:0;font-size:13px">Direct preview is not available for this file type (${escapeHtml(type||'binary')}).<br>You can safely download the file below to view it.</p></div>`;
+  }
   root.innerHTML=`<div class="gw-modal-backdrop" onclick="if(event.target===this)showDataStorageModal()"><div class="gw-modal data-file-viewer-modal">
     <div class="gw-modal-head"><div><strong>${escapeHtml(name)}</strong><small>${escapeHtml(type||'Stored file')}</small></div><button class="gw-modal-close" onclick="showDataStorageModal()" aria-label="Back">×</button></div>
     <div class="gw-modal-body">
-      <div class="data-file-preview"><iframe src="${src}" title="${escapeHtml(name)}"></iframe></div>
+      <div class="data-file-preview">${previewContent}</div>
       <div class="record-actions"><button type="button" class="gw-btn secondary" onclick="showDownloadConfirm(${Number(id)},${JSON.stringify(String(name))})"><span class="material-symbols-outlined">download</span>DOWNLOAD</button><button type="button" class="gw-btn btn-danger" onclick="deleteStoredFile(${Number(id)},${JSON.stringify(String(name))})"><span class="material-symbols-outlined">delete</span>DELETE</button></div>
     </div>
   </div></div>`;
@@ -206,7 +259,7 @@ function deleteStoredFile(id,name){
   const fd=new FormData(); fd.append('id',id);
   if(!confirm('Delete '+name+'? The file will be moved to Archive and can be recovered later.')) return;
   fetch(`${window.APP_BASE||''}/includes/data_storage.php?action=delete`,{method:'POST',body:fd,credentials:'same-origin'})
-   .then(r=>r.json()).then(data=>{if(!data.ok)throw new Error(data.error||'Delete failed.');showDataStorageModal();})
+   .then(r=>r.json()).then(data=>{if(!data.ok)throw new Error(data.error||'Delete failed.');window.DATA_STORAGE_HAS_FILES=null;showDataStorageModal();})
    .catch(e=>showModal('Delete failed',e.message));
 }
 function showDownloadConfirm(id,name){
@@ -328,15 +381,25 @@ function showArchiveModal(){
     box.innerHTML=data.items.map(x=>`<div class="data-storage-item archive-item">
       <span class="data-storage-file-icon material-symbols-outlined">${x.item_type==='file'?'description':'dataset'}</span>
       <span class="data-storage-file-main"><strong>${escapeHtml(x.item_name)}</strong><small>${escapeHtml(x.item_type)} · Deleted ${escapeHtml(x.deleted_at||'')}</small></span>
-      <button class="gw-btn primary" type="button" onclick="recoverArchive(${Number(x.id)})"><span class="material-symbols-outlined">restore</span>Recover</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="gw-btn primary" type="button" onclick="recoverArchive(${Number(x.id)})"><span class="material-symbols-outlined">restore</span>Recover</button>
+        <button class="gw-btn btn-danger" type="button" onclick="deleteArchiveItem(${Number(x.id)},${JSON.stringify(String(x.item_name))})"><span class="material-symbols-outlined">delete_forever</span>Delete</button>
+      </div>
     </div>`).join('');
    }).catch(()=>{const box=document.getElementById('archiveList');if(box)box.innerHTML='<div class="notification-empty"><strong>Unable to load archive.</strong><p>Please try again.</p></div>';});
 }
 function recoverArchive(id){
-  const fd=new FormData(); fd.append('id',id);
+  const fd=new FormData(); fd.append('id',id); fd.append('action','recover');
   fetch(`${window.APP_BASE||''}/includes/archive.php?action=recover`,{method:'POST',body:fd,credentials:'same-origin'})
-   .then(r=>r.json()).then(data=>{if(!data.ok)throw new Error(data.error||'Recovery failed.');showArchiveModal();})
+   .then(r=>r.json()).then(data=>{if(!data.ok)throw new Error(data.error||'Recovery failed.');window.DATA_STORAGE_HAS_FILES=null;showArchiveModal();})
    .catch(e=>showModal('Recovery failed',e.message));
+}
+function deleteArchiveItem(id,name){
+  if(!confirm('Permanently delete "'+name+'"? This action cannot be undone.')) return;
+  const fd=new FormData(); fd.append('id',id); fd.append('action','delete');
+  fetch(`${window.APP_BASE||''}/includes/archive.php?action=delete`,{method:'POST',body:fd,credentials:'same-origin'})
+   .then(r=>r.json()).then(data=>{if(!data.ok)throw new Error(data.error||'Delete failed.');showArchiveModal();})
+   .catch(e=>showModal('Delete failed',e.message));
 }
 
 /* Module top navigation: enabled only on the four module pages. */

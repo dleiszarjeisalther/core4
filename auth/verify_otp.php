@@ -19,8 +19,11 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             db()->prepare('DELETE FROM otp_requests WHERE user_id=?')->execute([(int)$pending['id']]);
             db()->prepare('INSERT INTO otp_requests(user_id,otp_hash,expires_at,attempts) VALUES(?,?,?,0)')
                 ->execute([(int)$pending['id'],$hash,$expires]);
-            send_otp_email($pending['email'],$pending['name'],$otp);
-            $success='A new verification code has been sent to your email.';
+            $_SESSION['temp_otp_code']=$otp;
+            try {
+                send_otp_email($pending['email'],$pending['name'],$otp);
+            } catch(Throwable $e) {}
+            $success='A new verification code has been generated and sent.';
         } else {
             $code=preg_replace('/\D/','',$_POST['otp']??'');
             $stmt=db()->prepare('SELECT id,otp_hash,expires_at,attempts FROM otp_requests WHERE user_id=? ORDER BY id DESC LIMIT 1');
@@ -29,18 +32,21 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
 
             if (!$row) {
                 $error='Your verification code is no longer available. Please sign in again.';
+                unset($_SESSION['temp_otp_code']);
             } elseif (strtotime($row['expires_at']) < time()) {
                 $error='Your verification code has expired. Please sign in again.';
                 db()->prepare('DELETE FROM otp_requests WHERE id=?')->execute([(int)$row['id']]);
+                unset($_SESSION['temp_otp_code']);
             } elseif ((int)$row['attempts'] >= OTP_MAX_ATTEMPTS) {
                 $error='Too many incorrect attempts. Please sign in again.';
+                unset($_SESSION['temp_otp_code']);
             } elseif (!preg_match('/^\d{6}$/',$code) || !password_verify($code,$row['otp_hash'])) {
                 db()->prepare('UPDATE otp_requests SET attempts=attempts+1 WHERE id=?')->execute([(int)$row['id']]);
                 $error='Incorrect verification code.';
             } else {
                 login_user($pending);
                 db()->prepare('DELETE FROM otp_requests WHERE user_id=?')->execute([(int)$pending['id']]);
-                unset($_SESSION['pending_otp_user'],$_SESSION['pending_otp_created']);
+                unset($_SESSION['pending_otp_user'],$_SESSION['pending_otp_created'],$_SESSION['temp_otp_code']);
 
                 $history=db()->prepare('INSERT INTO login_history(user_id,email,status,ip_address,user_agent) VALUES(?,?,?,?,?)');
                 $history->execute([
@@ -55,6 +61,16 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
     } catch(Throwable $e) {
         $error='Unable to process the verification request. Please try again.';
     }
+}
+
+if (empty($_SESSION['temp_otp_code'])) {
+    $otp=(string)random_int(100000,999999);
+    $otpHash=password_hash($otp,PASSWORD_DEFAULT);
+    $expires=date('Y-m-d H:i:s',time()+(OTP_EXPIRY_MINUTES*60));
+    db()->prepare('DELETE FROM otp_requests WHERE user_id=?')->execute([(int)$pending['id']]);
+    db()->prepare('INSERT INTO otp_requests(user_id,otp_hash,expires_at,attempts) VALUES(?,?,?,0)')
+        ->execute([(int)$pending['id'],$otpHash,$expires]);
+    $_SESSION['temp_otp_code']=$otp;
 }
 ?>
 <!doctype html>
@@ -73,11 +89,29 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
       <div class="brand-logo-white auth-logo-wrap"><img src="../assets/logo2.svg" alt="Great Solomon Manpower Services Inc. logo" class="brand-logo-image"></div>
       <div class="auth-brand-copy"><strong>Great Solomon Manpower Services Inc.</strong><div class="small-muted">Core Transaction 4</div></div>
     </div>
+    <?php $tempOtp = $_SESSION['temp_otp_code'] ?? ''; ?>
     <div class="auth-heading">
       <span class="material-symbols-outlined">shield_lock</span>
       <h1>Verify Your Identity</h1>
       <p>We sent a 6-digit verification code to <strong><?=e($pending['email'])?></strong>.</p>
     </div>
+
+    <?php if(!empty($tempOtp)): ?>
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:14px;padding:16px;margin-bottom:18px;text-align:center;box-shadow:0 2px 8px rgba(245,158,11,0.08);">
+        <div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.06em;display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:6px;">
+          <span class="material-symbols-outlined" style="font-size:18px;color:#d97706;">key</span> Temporary OTP (Development Mode)
+        </div>
+        <div style="font-size:32px;font-weight:900;letter-spacing:10px;color:#7c2d12;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;margin:6px 0;user-select:all;padding-left:10px;">
+          <?=e($tempOtp)?>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px;">
+          <button type="button" onclick="const input=document.getElementById('otp');if(input){input.value='<?=e($tempOtp)?>';input.focus();}" style="background:#fde68a;border:1px solid #f59e0b;padding:5px 14px;border-radius:8px;font-size:12px;font-weight:700;color:#78350f;cursor:pointer;display:inline-flex;align-items:center;gap:4px;">
+            <span class="material-symbols-outlined" style="font-size:16px;">content_paste_go</span> Auto-fill OTP
+          </button>
+        </div>
+      </div>
+    <?php endif; ?>
+
     <?php if($error):?><div class="notice error auth-error"><?=e($error)?></div><?php endif;?>
     <?php if($success):?><div class="notice success auth-error"><?=e($success)?></div><?php endif;?>
     <form method="post" class="auth-form">

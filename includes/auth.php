@@ -7,7 +7,9 @@ function app_base_path(): string {
     $path=str_replace('\\','/',dirname($_SERVER['SCRIPT_NAME']??'/'));
     if(str_contains($path,'/modules/')) return preg_replace('#/modules/.*$#','',$path) ?: '';
     if(str_contains($path,'/auth/')) return preg_replace('#/auth/.*$#','',$path) ?: '';
-    return $path==='/'?'':rtrim($path,'/');
+    if(str_contains($path,'/includes')) return preg_replace('#/includes.*$#','',$path) ?: '';
+    if(str_contains($path,'/services')) return preg_replace('#/services.*$#','',$path) ?: '';
+    return ($path==='/' || $path==='.') ? '' : rtrim($path,'/');
 }
 
 function require_login(): void {

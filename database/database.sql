@@ -184,7 +184,7 @@ INSERT INTO users(name,email,password_hash,role,active) VALUES
 ON DUPLICATE KEY UPDATE name=VALUES(name), password_hash=VALUES(password_hash), role='Administrator', active=1;
 
 INSERT INTO users(name,email,password_hash,role,active) VALUES
-('Staff','ct4staff@gmail.com','$2y$12$sJodMRrCJDu1/12E9vhwYOPgOtXo8rg.V/t2zUqdFl7dEFwd4zNZq','Staff',1)
+('Staff','ct4staff@gmail.com','$2y$12$W3CxFvVU6NqcmG5VEempMeY4/gfboeUJdjQgxrzfLtgNCiFpDShQu','Staff',1)
 ON DUPLICATE KEY UPDATE name=VALUES(name), password_hash=VALUES(password_hash), role='Staff', active=1;
 
 INSERT INTO safety_incidents(title,employee_name,incident_date,severity,status,description) VALUES
